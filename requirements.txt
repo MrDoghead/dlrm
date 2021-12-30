@@ -1,0 +1,10 @@
+future
+numpy
+onnx
+pydot
+torch==1.7.1+cpu -f https://download.pytorch.org/whl/torch_stable.html
+torchviz
+scikit-learn
+tqdm
+opencv-python
+sklearn
