@@ -602,7 +602,7 @@ class RandomDataset(Dataset):
         if num_batches != 0:
             nbatches = num_batches
             data_size = nbatches * mini_batch_size
-            # print("Total number of batches %d" % nbatches)
+        print("Total number of batches %d" % nbatches)
 
         # save args (recompute data_size if needed)
         self.m_den = m_den
@@ -926,10 +926,12 @@ def generate_dist_input_batch(
     lS_emb_indices = []
     # for each embedding generate a list of n lookups,
     # where each lookup is composed of multiple sparse indices
+    quantile = 0.9999
     for size in ln_emb:
         lS_batch_offsets = []
         lS_batch_indices = []
         offset = 0
+        beta = - size / (np.log(1 - quantile))
         for _ in range(n):
             # num of sparse indices to be used per embedding (between
             if num_indices_per_lookup_fixed:
@@ -940,8 +942,16 @@ def generate_dist_input_batch(
                 sparse_group_size = np.int64(
                     np.round(max([1.0], r * min(size, num_indices_per_lookup)))
                 )
+            # print("sparse_group_size:",sparse_group_size)
+            # randomly switch between one-hot and multi-hot
+            if ra.random(1) < 0.5:
+                sparse_group_size = 1
+            # for some feature (size<1000), use uniform dist`
+            if size < 1000:
+                rand_data_dist = "uniform"
             # sparse indices to be used per embedding
             if rand_data_dist == "gaussian":
+                rand_data_max = size
                 if rand_data_mu == -1:
                     rand_data_mu = (rand_data_max + rand_data_min) / 2.0
                 r = ra.normal(rand_data_mu, rand_data_sigma, sparse_group_size)
@@ -950,6 +960,10 @@ def generate_dist_input_batch(
             elif rand_data_dist == "uniform":
                 r = ra.random(sparse_group_size)
                 sparse_group = np.unique(np.round(r * (size - 1)).astype(np.int64))
+            elif rand_data_dist == "exp":
+                r = np.random.exponential(beta, sparse_group_size)
+                sparse_group = np.clip(r, rand_data_min, size)
+                sparse_group = np.unique(sparse_group).astype(np.int64)
             else:
                 raise(rand_data_dist, "distribution is not supported. \
                      please select uniform or gaussian")
@@ -963,6 +977,9 @@ def generate_dist_input_batch(
             offset += sparse_group_size
         lS_emb_offsets.append(torch.tensor(lS_batch_offsets))
         lS_emb_indices.append(torch.tensor(lS_batch_indices))
+        # print("lS_emb_offsets:",lS_emb_offsets)
+        # print("lS_emb_indices:",lS_emb_indices)
+    # exit(0)
 
     return (Xt, lS_emb_offsets, lS_emb_indices)
 

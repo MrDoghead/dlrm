@@ -423,7 +423,7 @@ class DLRM_Net(nn.Module):
             if self.quantize_emb:
                 s1 = self.emb_l_q[k].element_size() * self.emb_l_q[k].nelement()
                 s2 = self.emb_l_q[k].element_size() * self.emb_l_q[k].nelement()
-                print("quantized emb sizes:", s1, s2)
+                # print("quantized emb sizes:", s1, s2)
 
                 if self.quantize_bits == 4:
                     QV = ops.quantized.embedding_bag_4bit_rowwise_offsets(
@@ -443,21 +443,20 @@ class DLRM_Net(nn.Module):
                 ly.append(QV)
             else:
                 E = emb_l[k]
+                sparse_index_group_batch = torch.cat([sparse_index_group_batch,sparse_index_group_batch])
+                #print("ind:",sparse_index_group_batch,sparse_index_group_batch.shape)
+                #print("off:",sparse_offset_group_batch,sparse_offset_group_batch.shape)
                 V = E(
                     sparse_index_group_batch,
                     sparse_offset_group_batch,
                     per_sample_weights=per_sample_weights,
                 )
+                #print(V)
                 # V: bs x 64
-                if 0 in sparse_index_group_batch:
-                    print(sparse_index_group_batch)
-                    print(V)
-                    print()
                 #print(V.shape)
                 ly.append(V)
 
         #print(ly)
-        exit(0)
         return ly
 
     #  using quantizing functions from caffe2/aten/src/ATen/native/quantized/cpu
@@ -519,9 +518,9 @@ class DLRM_Net(nn.Module):
         return R
 
     def forward(self, dense_x, lS_o, lS_i):
-        #print('dense_x:',dense_x,dense_x.shape)
-        #print('lS_o:',lS_o,lS_o.shape)
-        #print('lS_i:',lS_i,lS_i[0].shape)
+        # print('dense_x:',dense_x,dense_x.shape)
+        # print('lS_o:',lS_o,lS_o.shape)
+        # print('lS_i:',lS_i,lS_i[0].shape)
         if ext_dist.my_size > 1:
             # multi-node multi-device run
             return self.distributed_forward(dense_x, lS_o, lS_i)
@@ -798,6 +797,15 @@ def inference(
             print("Warning: Skiping the batch %d with size %d" % (i, X_test.size(0)))
             continue
 
+        # save inputs for debug
+        save_inp_file = "./infer_inputs/test_" + str(i) + ".npz"
+        inp_dict = {
+                "X_test":X_test,
+                "lS_o_test":lS_o_test,
+                "lS_i_test":lS_i_test
+                }
+        np.savez(save_inp_file, dict_=inp_dict)
+
         # forward pass
         Z_test = dlrm_wrap(
             X_test,
@@ -994,6 +1002,7 @@ def run():
     parser.add_argument("--quantize-emb-with-bit", type=int, default=32)
     # onnx
     parser.add_argument("--save-onnx", action="store_true", default=False)
+    parser.add_argument("--onnx-path", type=str, default="")
     # gpu
     parser.add_argument("--use-gpu", action="store_true", default=False)
     # distributed
@@ -1077,6 +1086,7 @@ def run():
         # if the parameter is not set, use the same parameter for training
         args.test_num_workers = args.num_workers
 
+    print("--mini-batch-size:",args.mini_batch_size)
     use_gpu = args.use_gpu and torch.cuda.is_available()
 
     if not args.debug_mode:
@@ -1108,6 +1118,9 @@ def run():
         mlperf_logger.barrier()
 
     if args.data_generation == "dataset":
+        print("generate data from dataset")
+        # d: X_int, X_cat, y
+        # ld: X, ls_o, ls_i, target
         train_data, train_ld, test_data, test_ld = dp.make_criteo_data_and_loaders(args)
         table_feature_map = {idx: idx for idx in range(len(train_data.counts))}
         nbatches = args.num_batches if args.num_batches > 0 else len(train_ld)
@@ -1129,10 +1142,18 @@ def run():
         m_den = train_data.m_den
         ln_bot[0] = m_den
     else:
+        print("generate data at random")
         # input and target at random
         ln_emb = np.fromstring(args.arch_embedding_size, dtype=int, sep="-")
         m_den = ln_bot[0]
         train_data, train_ld, test_data, test_ld = dp.make_random_data_and_loader(args, ln_emb, m_den)
+        # print(len(test_ld))
+        # for d in test_ld:
+            # x,o,i,t = d
+            # print(x,x.shape)
+            # print(o,o.shape)
+            # print(i,t)
+            # exit(0)
         nbatches = args.num_batches if args.num_batches > 0 else len(train_ld)
         nbatches_test = len(test_ld)
 
@@ -1423,7 +1444,7 @@ def run():
         full_model_path = "./pytorch/tmp_dlrm.pt"
         #full_model_path = "./pytorch/tmp_dlrm_40m.pt"
         dlrm = torch.load(full_model_path)
-        print(f'loaded from {full_model_path}')
+        print(f'mlperf model loaded from {full_model_path}')
         ld_j = ld_model["iter"]
         ld_k = ld_model["epoch"]
         ld_nepochs = ld_model["nepochs"]
@@ -1519,7 +1540,6 @@ def run():
     writer = SummaryWriter(tb_file)
 
     ext_dist.barrier()
-    """
     with torch.autograd.profiler.profile(
         args.enable_profiling, use_cuda=use_gpu, record_shapes=True
     ) as prof:
@@ -1794,7 +1814,6 @@ def run():
                 device,
                 use_gpu,
             )
-    """
 
     # profiling
     if args.enable_profiling:
@@ -1834,8 +1853,12 @@ def run():
             break
 
     if args.save_onnx:
-        dlrm_pytorch_onnx_file = "./tb0875_10M/dlrm_s_pytorch.onnx"
-        #dlrm_pytorch_onnx_file = "./tb00_40M/dlrm_s_pytorch.onnx"
+        print("start to export onnx model...")
+        #"./tb0875_10M/dlrm_s_pytorch.onnx" 
+        #"./tb00_40M/dlrm_s_pytorch.onnx"
+        #"./fake_tb0875_10M/dlrm_s_pytorch.onnx"
+        if args.onnx_path:
+            dlrm_pytorch_onnx_file = args.onnx_path
         
         # workaround 1: tensor -> list
         if torch.is_tensor(lS_i_onnx):
@@ -1908,7 +1931,7 @@ def run():
             dlrm,
             (X_onnx, lS_o_onnx, lS_i_onnx),
             dlrm_pytorch_onnx_file,
-            verbose=True,
+            verbose=False,
             use_external_data_format=True,
             opset_version=11,
             input_names=all_inputs,

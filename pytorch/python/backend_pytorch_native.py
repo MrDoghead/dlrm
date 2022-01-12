@@ -90,6 +90,8 @@ class BackendPytorchNative(backend.Backend):
         #sys.exit()
     
         dlrm = dlrm.to(self.device)
+        print(dlrm)
+        exit(0)
         self.model = dlrm
 
         # find inputs from the model if not passed in by config

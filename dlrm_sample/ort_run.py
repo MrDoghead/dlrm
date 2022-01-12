@@ -2,7 +2,8 @@ import onnx
 import onnxruntime
 import numpy as np
 
-model_path = "../tb0875_10M/dlrm_s_pytorch.onnx"
+#model_path = "../tb0875_10M/dlrm_s_pytorch.onnx"
+model_path = "../fake_tb0875_10M/dlrm_s_pytorch.onnx"
 onnxruntime.set_default_logger_severity(3)
 session = onnxruntime.InferenceSession(model_path)
 print("session created")

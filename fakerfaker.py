@@ -97,18 +97,19 @@ def fake_dlrm():
 if __name__=="__main__":
     profile = "terabyte0875"
     num_samples = 4096
+    emb_dim=64
     num_dense = 13
+    num_sparse = 26
     num_days = 24
     out_dir = "./fake_" + profile + "/"
     out_name = "day_"
     # make emb
-    spa_size, spa_num, ln_emb = fake_emb(sparse_feature_size=64, sparse_feature_num=26, shuffle=True)
+    spa_size, spa_num, ln_emb = fake_emb(sparse_feature_size=emb_dim, sparse_feature_num=num_sparse, shuffle=True)
     # make data
-    for k in range(num_days):
-        text_file =  out_dir + out_name + ("" if profile == "kaggle" else str(k))
-        fake_data(num_samples=num_samples, num_d=num_dense, num_s=spa_num, ln_emb=ln_emb, text_file=text_file)
-        print(f"faked data saved at {text_file}")
-    # make model
+    # for k in range(num_days):
+        # text_file =  out_dir + out_name + ("" if profile == "kaggle" else str(k))
+        # fake_data(num_samples=num_samples, num_d=num_dense, num_s=spa_num, ln_emb=ln_emb, text_file=text_file)
+        # print(f"faked data saved at {text_file}")
 
 
 
