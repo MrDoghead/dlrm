@@ -61,6 +61,7 @@ import datetime
 import json
 import sys
 import time
+import os
 
 # onnx
 # The onnx import causes deprecation warnings every time workers
@@ -925,9 +926,11 @@ def run():
     )
     # model related parameters
     parser.add_argument("--arch-sparse-feature-size", type=int, default=2)
+    parser.add_argument("--arch-sparse-feature-num", type=int, default=26)
     parser.add_argument(
-        "--arch-embedding-size", type=dash_separated_ints, default="4-3-2"
+        "--arch-embedding-size", type=dash_separated_ints, default="4-3-2",
     )
+    parser.add_argument("--random-emb-size", action="store_true", default=False)
     # j will be replaced with the table number
     parser.add_argument("--arch-mlp-bot", type=dash_separated_ints, default="4-3-2")
     parser.add_argument("--arch-mlp-top", type=dash_separated_ints, default="4-2-1")
@@ -1002,6 +1005,7 @@ def run():
     parser.add_argument("--quantize-emb-with-bit", type=int, default=32)
     # onnx
     parser.add_argument("--save-onnx", action="store_true", default=False)
+    parser.add_argument("--onnx-runtime", action="store_true", default=False)
     parser.add_argument("--onnx-path", type=str, default="")
     # gpu
     parser.add_argument("--use-gpu", action="store_true", default=False)
@@ -1079,6 +1083,22 @@ def run():
     torch.set_printoptions(precision=args.print_precision)
     torch.manual_seed(args.numpy_rand_seed)
 
+    # gen fake emb para
+    from fakerfaker import fake_emb
+    if args.random_emb_size:
+        args.arch_embedding_size = ""
+    spa_size, spa_num, ln_emb = fake_emb(
+            sparse_feature_size=args.arch_sparse_feature_size, 
+            sparse_feature_num=args.arch_sparse_feature_num, 
+            emb_size=args.arch_embedding_size,
+            min_cat=2,
+            max_cat=args.max_ind_range,
+            shuffle=True
+            )
+    args.arch_embedding_size = "-".join([str(i) for i in ln_emb])
+    m_spa = spa_size
+
+
     if args.test_mini_batch_size < 0:
         # if the parameter is not set, use the training batch size
         args.test_mini_batch_size = args.mini_batch_size
@@ -1086,7 +1106,6 @@ def run():
         # if the parameter is not set, use the same parameter for training
         args.test_num_workers = args.num_workers
 
-    print("--mini-batch-size:",args.mini_batch_size)
     use_gpu = args.use_gpu and torch.cuda.is_available()
 
     if not args.debug_mode:
@@ -1106,6 +1125,7 @@ def run():
         device = torch.device("cpu")
         print("Using CPU...")
 
+    print("--mini-batch-size:",args.mini_batch_size)
     ### prepare training data ###
     ln_bot = np.fromstring(args.arch_mlp_bot, dtype=int, sep="-")
     # input data
@@ -1300,12 +1320,6 @@ def run():
     # np.random.seed(args.numpy_rand_seed)
     global dlrm
 
-    # test fake model
-    """
-    from fakerfaker import fake_emb
-    spa_size, spa_num, ln_emb = fake_emb(sparse_feature_size=64, sparse_feature_num=26, shuffle=True)
-    m_spa = spa_size
-    """
 
     dlrm = DLRM_Net(
         m_spa,
@@ -1441,8 +1455,10 @@ def run():
             # when targeting inference on CPU
             ld_model = torch.load(args.load_model, map_location=torch.device("cpu"))
         #dlrm.load_state_dict(ld_model["state_dict"])
-        full_model_path = "./pytorch/tmp_dlrm.pt"
-        #full_model_path = "./pytorch/tmp_dlrm_40m.pt"
+        if "large" in args.load_model:
+            full_model_path = "./pytorch/tmp_dlrm_40m.pt"
+        else:
+            full_model_path = "./pytorch/tmp_dlrm.pt"
         dlrm = torch.load(full_model_path)
         print(f'mlperf model loaded from {full_model_path}')
         ld_j = ld_model["iter"]
@@ -1856,9 +1872,8 @@ def run():
         print("start to export onnx model...")
         #"./tb0875_10M/dlrm_s_pytorch.onnx" 
         #"./tb00_40M/dlrm_s_pytorch.onnx"
-        #"./fake_tb0875_10M/dlrm_s_pytorch.onnx"
         if args.onnx_path:
-            dlrm_pytorch_onnx_file = args.onnx_path
+            dlrm_pytorch_onnx_file = os.path.join(args.onnx_path,"dlrm_s_pytorch.onnx")
         
         # workaround 1: tensor -> list
         if torch.is_tensor(lS_i_onnx):
@@ -1945,8 +1960,12 @@ def run():
         #onnx.checker.check_model(dlrm_pytorch_onnx)
         onnx.checker.check_model(dlrm_pytorch_onnx_file)
         print('onnx check good')
-    total_time_end = time_wrap(use_gpu)
 
+    if args.onnx_runtime:
+        import onnx_runtime
+        onnx_runtime.run(dlrm_pytorch_onnx_file)
+
+    total_time_end = time_wrap(use_gpu)
 
 if __name__ == "__main__":
     #pip3 install --pre torch torchvision torchaudio -f https://download.pytorch.org/whl/nightly/cpu/torch_nightly.html

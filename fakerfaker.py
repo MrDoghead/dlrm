@@ -47,9 +47,9 @@ def fake_data(num_samples=4096, num_t=1, num_d=13, num_s=26, ln_emb=None, text_f
 def fake_emb(
         sparse_feature_size=None, 
         sparse_feature_num=26, 
-        emb_size=None, 
+        emb_size="", 
         min_cat=2, 
-        max_cat=9999999, 
+        max_cat=1000000, 
         shuffle=True):
     """
     make up `sparse_feature_num` embedding tables and
@@ -58,8 +58,8 @@ def fake_emb(
     """
     if sparse_feature_size is None:
         sparse_feature_size = np.random.choice([16,32,64,128,256])
-    if emb_size is not None:
-        ln_emb = np.fromstring(ln_emb, dtype=int, sep="-")
+    if emb_size:
+        ln_emb = np.fromstring(emb_size, dtype=int, sep="-")
         ln_emb = np.asarray(ln_emb)
         assert ln_emb.size == sparse_feature_num, "sparse_feature_num not match num_emb"
     else:
@@ -71,8 +71,9 @@ def fake_emb(
             for _ in range(q):
                 s = 10**i if 10**i > min_cat else min_cat
                 e = 10**(i+1)-1 if 10**(i+1)-1 < max_cat else max_cat
-                #print(s,e)
-                emb_list.append(np.random.randint(s,e))
+                # print(s,e)
+                size = np.random.randint(s,e) if s<e else s
+                emb_list.append(size)
                 if len(emb_list) >= sparse_feature_num:
                     break
             if len(emb_list) >= sparse_feature_num:
@@ -80,19 +81,19 @@ def fake_emb(
         while len(emb_list) < sparse_feature_num:
             s = 10**i if 10**i > min_cat else min_cat
             e = 10**(i+1)-1 if 10**(i+1)-1 < max_cat else max_cat
-            #print(s,e)
-            emb_list.append(np.random.randint(s,e))
+            # print(s,e)
+            size = np.random.randint(s,e) if s<e else s
+            emb_list.append(size)
         ln_emb = np.array(emb_list)
     if shuffle:
         np.random.shuffle(ln_emb)
     print("=== fake embedding info ===")
     print(f"sparse_feature_size: {sparse_feature_size}")
     print(f"{ln_emb.size} ln_emb: {ln_emb}")
+    print("===========================")
 
     return sparse_feature_size, sparse_feature_num, ln_emb
 
-def fake_dlrm():
-    pass
 
 if __name__=="__main__":
     profile = "terabyte0875"
