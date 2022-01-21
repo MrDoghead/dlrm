@@ -3,6 +3,7 @@ export PYTHONPATH=$PYTHONPATH:$HOME/project/mlcommons/inference/recommendation/d
 
 fake_model_dir="./fake_tb00_40M"
 mkdir ${fake_model_dir} 
+mkdir ./infer_inputs
 
 python dlrm_s_pytorch.py \
 	--arch-sparse-feature-size=128 \
