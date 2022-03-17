@@ -799,6 +799,7 @@ def inference(
             continue
 
         # save inputs for debug
+        """
         save_inp_file = "./infer_inputs/test_" + str(i) + ".npz"
         inp_dict = {
                 "X_test":X_test,
@@ -806,6 +807,7 @@ def inference(
                 "lS_i_test":lS_i_test
                 }
         np.savez(save_inp_file, dict_=inp_dict)
+        """
 
         # forward pass
         Z_test = dlrm_wrap(
@@ -1167,13 +1169,15 @@ def run():
         ln_emb = np.fromstring(args.arch_embedding_size, dtype=int, sep="-")
         m_den = ln_bot[0]
         train_data, train_ld, test_data, test_ld = dp.make_random_data_and_loader(args, ln_emb, m_den)
-        # print(len(test_ld))
-        # for d in test_ld:
-            # x,o,i,t = d
-            # print(x,x.shape)
-            # print(o,o.shape)
-            # print(i,t)
-            # exit(0)
+        """
+        print(len(test_ld))
+        for d in test_ld:
+            x,o,i,t = d
+            print("x",x,x.shape)
+            print("o",o,o.shape)
+            print("i t",i,t)
+            exit(0)
+        """
         nbatches = args.num_batches if args.num_batches > 0 else len(train_ld)
         nbatches_test = len(test_ld)
 
@@ -1869,6 +1873,7 @@ def run():
             break
 
     if args.save_onnx:
+        import onnx
         print("start to export onnx model...")
         #"./tb0875_10M/dlrm_s_pytorch.onnx" 
         #"./tb00_40M/dlrm_s_pytorch.onnx"
@@ -1962,8 +1967,30 @@ def run():
         print('onnx check good')
 
     if args.onnx_runtime:
-        import onnx_runtime
-        onnx_runtime.run(dlrm_pytorch_onnx_file)
+        import onnxruntime
+        #import onnx_runtime
+        #onnx_runtime.run(dlrm_pytorch_onnx_file)
+        print("=== onnxruntime session ===")
+        onnxruntime.set_default_logger_severity(3)
+        session = onnxruntime.InferenceSession(dlrm_pytorch_onnx_file)
+
+        ort_inputs = dict()
+        ort_inputs['dense_x'] = X_onnx.numpy()
+        ort_inputs['offsets'] = lS_o_onnx.numpy()
+        for i in range(len(i_inputs)):
+            ort_inputs[i_inputs[i]] = lS_i_onnx[i].numpy()
+        outputs = ['pred']
+        print("ort inputs:",{k:v for k,v in ort_inputs.items()})
+
+        ort_outputs = session.run(outputs, ort_inputs)
+        print("outputs:", ort_outputs)
+        # save ort inputs
+        import pickle as pkl
+        ort_data = {'inputs': ort_inputs, 'outputs': outputs}
+        ort_data_path = './ort_data.pkl'
+        with open(ort_data_path,'wb') as f:
+            pkl.dump(ort_data, f)
+        print(f'onnxruntime data saved at {ort_data_path}')
 
     total_time_end = time_wrap(use_gpu)
 
