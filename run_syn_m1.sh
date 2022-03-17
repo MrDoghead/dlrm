@@ -1,7 +1,7 @@
 #!/bin/bash
 export PYTHONPATH=$PYTHONPATH:/nfs/workspace/dcao/work/dlrm
 
-fake_model_dir="./fake_tb00_40M_m1"
+fake_model_dir="./synthetic_m1"
 mkdir ${fake_model_dir} 
 
 python3 dlrm_s_pytorch.py \
